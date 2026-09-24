@@ -321,6 +321,26 @@
 			clock-frequency = <156000000>;
 		};
 
+		/*
+		 * var_312m / var_500m are variable-rate outputs of the root
+		 * CCU PLLs used as sources for the MM (multimedia) AXI switch
+		 * clock.  They are modelled here as fixed-clocks - matching how
+		 * the other var_* clocks above are handled - on the assumption
+		 * that the bootloader has already configured the PLLs.
+		 * TODO: model these properly as root-CCU gated PLL channels.
+		 */
+		var_312m_clk: var_312m {
+			#clock-cells = <0>;
+			compatible = "fixed-clock";
+			clock-frequency = <312000000>;
+		};
+
+		var_500m_clk: var_500m {
+			#clock-cells = <0>;
+			compatible = "fixed-clock";
+			clock-frequency = <500000000>;
+		};
+
 		root_ccu: root_ccu@35001000 {
 			compatible = "brcm,bcm21664-root-ccu";
 			reg = <0x35001000 0x0f00>;
@@ -376,6 +396,20 @@
 					     "sdio3_ahb",
 					     "sdio4_ahb",
 					     "usb_otg_ahb";
+		};
+
+		/*
+		 * Multimedia CCU (0x3c000000).  Gates the MM-island clocks
+		 * (camera/DSI/V3D).  Only mm_switch_axi and v3d_axi are
+		 * currently provided - enough to bring up the V3D GPU.
+		 * Requires the MM power domain to be powered to respond.
+		 */
+		mm_ccu: mm_ccu@3c000000 {
+			compatible = "brcm,bcm21664-mm-ccu";
+			reg = <0x3c000000 0x0f00>;
+			#clock-cells = <1>;
+			clock-output-names = "mm_switch_axi",
+					     "v3d_axi";
 		};
 	};
 };

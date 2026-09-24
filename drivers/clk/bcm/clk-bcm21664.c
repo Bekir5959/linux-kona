@@ -392,6 +392,82 @@ static struct ccu_data slave_ccu_data = {
 	},
 };
 
+/* MM CCU */
+
+/*
+ * The multimedia (MM) CCU lives at 0x3c000000 and gates the clocks for the
+ * multimedia island (camera, DSI, V3D/GPU, ...).  Only the two clocks needed
+ * to bring up the VideoCore-IV V3D block are modelled here:
+ *
+ *   mm_switch_axi  - the MM AXI switch clock, parent of all MM AXI clients
+ *   v3d_axi        - the V3D block's AXI interface clock
+ *
+ * Register offsets, gate/policy bit positions and the source-select encoding
+ * were taken from the downstream Samsung "java" (BCM23550) kernel
+ * (arch/arm/mach-java/clock.c and .../rdb/brcm_rdb_mm_clk_mgr_reg.h) and
+ * cross-checked against the identical mach-hawaii (BCM21664) RDB.  The CCU
+ * register block layout (WR_ACCESS, POLICY, LVM_EN) is the standard Kona CCU
+ * layout, identical to the master/slave CCUs above.
+ *
+ * NOTE: The whole MM island must be powered (MM power domain) for any of
+ * these registers to respond; that power domain is not yet modelled in
+ * mainline.  See the V3D device tree node for how this is wired to runtime PM.
+ */
+
+/*
+ * NB: no .policy on these clocks (and none on the CCU below).  The MM CCU
+ * policy engine is coupled to the power-island DFS/voltage tables, which are
+ * not modelled here; driving it (stop/start LVM_EN + POLICY_CTL) times out
+ * ("mm_ccu policy engine never started").  The bootloader already programs
+ * the MM POLICY*_MASK bits (V3D + MM_SWITCH), so clk-kona can gate these
+ * clocks directly, which was verified on hardware (writing V3D_CLKGATE
+ * EN=1/SEL=1 with the policy engine untouched brings V3D up and IDENT0 reads
+ * 0x02443356).  This mirrors root_ccu, which likewise has no policy control.
+ */
+static struct peri_clk_data mm_switch_axi_data = {
+	.gate		= HW_SW_GATE(0x0200, 16, 0, 1),	/* MM_AXI_SWITCH_CLKGATE */
+	.hyst		= HYST(0x0200, 8, 9),
+	/*
+	 * Gate-only: the selector/divider are deliberately NOT modelled.
+	 * Committing a divider change goes through DIV_TRIG (0x0afc) via
+	 * __clk_trigger(), which - exactly like the policy engine - waits on a
+	 * status bit that never clears without the MM DFS/voltage context we
+	 * don't set up, and would time out ("error initializing divider").
+	 * We leave source-select and divider at the bootloader's values
+	 * (var_312m, confirmed on hardware via AXI_DIV PLL_SELECT=2) and only
+	 * gate the clock.  Consequence: the rate reported to the framework is
+	 * var_312m undivided - cosmetic; V3D bring-up doesn't depend on it.
+	 * TODO: model the divider once the MM CCU DFS/trigger path is understood.
+	 */
+	.clocks		= CLOCKS("var_312m"),
+};
+
+static struct bus_clk_data v3d_axi_data = {
+	.gate		= HW_SW_GATE(0x0270, 16, 0, 1),	/* V3D_CLKGATE */
+	.hyst		= HYST(0x0270, 8, 9),
+	.clocks		= CLOCKS("mm_switch_axi"),
+	/*
+	 * TODO: V3D also has an AXI-level soft reset in the MM reset manager
+	 * (MM_RST base 0x3c000f00, SOFT_RSTN0 offset 0x04, V3D_SOFT_RSTN bit 5,
+	 * mask 0x20).  Not modelled here - if V3D comes up wedged, that reset
+	 * likely needs to be deasserted via a reset-controller before enable.
+	 */
+};
+
+#define BCM21664_MM_CCU_CLK_COUNT	(BCM21664_MM_CCU_V3D_AXI + 1)
+
+static struct ccu_data mm_ccu_data = {
+	BCM21664_CCU_COMMON(mm, MM),
+	/* no policy control - see note above mm_switch_axi_data */
+	.kona_clks	= {
+		[BCM21664_MM_CCU_MM_SWITCH_AXI] =
+			KONA_CLK(mm, mm_switch_axi, peri),
+		[BCM21664_MM_CCU_V3D_AXI] =
+			KONA_CLK(mm, v3d_axi, bus),
+		[BCM21664_MM_CCU_CLK_COUNT] = LAST_KONA_CLK,
+	},
+};
+
 /* Device tree match table callback functions */
 
 static void __init kona_dt_root_ccu_setup(struct device_node *node)
@@ -414,6 +490,11 @@ static void __init kona_dt_slave_ccu_setup(struct device_node *node)
 	kona_dt_ccu_setup(&slave_ccu_data, node);
 }
 
+static void __init kona_dt_mm_ccu_setup(struct device_node *node)
+{
+	kona_dt_ccu_setup(&mm_ccu_data, node);
+}
+
 CLK_OF_DECLARE(bcm21664_root_ccu, BCM21664_DT_ROOT_CCU_COMPAT,
 			kona_dt_root_ccu_setup);
 CLK_OF_DECLARE(bcm21664_aon_ccu, BCM21664_DT_AON_CCU_COMPAT,
@@ -422,3 +503,5 @@ CLK_OF_DECLARE(bcm21664_master_ccu, BCM21664_DT_MASTER_CCU_COMPAT,
 			kona_dt_master_ccu_setup);
 CLK_OF_DECLARE(bcm21664_slave_ccu, BCM21664_DT_SLAVE_CCU_COMPAT,
 			kona_dt_slave_ccu_setup);
+CLK_OF_DECLARE(bcm21664_mm_ccu, BCM21664_DT_MM_CCU_COMPAT,
+			kona_dt_mm_ccu_setup);

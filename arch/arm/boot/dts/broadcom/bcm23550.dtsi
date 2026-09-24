@@ -48,6 +48,36 @@
 			clock-frequency = <1000000000>;
 		};
 	};
+
+	/*
+	 * VideoCore-IV 3D core (V3D).  Same "gen 4" IP the mainline vc4
+	 * driver targets via the Cygnus binding.  The register block lives
+	 * in the MM peripheral region at 0x3c00b000 and is clocked by the
+	 * MM CCU's v3d_axi clock.  Disabled by default: it only works once
+	 * the MM power domain is powered, which is board/bootloader
+	 * dependent and not yet modelled in mainline - enable per board.
+	 *
+	 * V3D IRQ: downstream IRQ_GRAPHICS == BCM_INT_ID_RESERVED148, i.e.
+	 * raw GIC hwirq 180 -> GIC_SPI (180 - 32) = 148, level high.
+	 */
+	v3d: v3d@3c00b000 {
+		compatible = "brcm,cygnus-v3d";
+		reg = <0x3c00b000 0x1000>;
+		clocks = <&mm_ccu BCM21664_MM_CCU_V3D_AXI>;
+		clock-names = "v3d_clk";
+		interrupts = <GIC_SPI 148 IRQ_TYPE_LEVEL_HIGH>;
+		status = "disabled";
+	};
+
+	/*
+	 * vc4 component-master node.  Carries no registers; it exists so the
+	 * vc4 DRM driver binds in render-only mode (V3D only, no KMS) and
+	 * exposes /dev/dri/renderD128.  Enabled together with the v3d node.
+	 */
+	gpu: gpu {
+		compatible = "brcm,cygnus-vc4";
+		status = "disabled";
+	};
 };
 
 &apps {
