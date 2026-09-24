@@ -25,7 +25,12 @@ vc4_debugfs_init(struct drm_minor *minor)
 	struct vc4_dev *vc4 = to_vc4_dev(minor->dev);
 	struct drm_device *drm = &vc4->base;
 
-	drm_WARN_ON(drm, vc4_hvs_debugfs_init(minor));
+	/*
+	 * Render-only instances have no HVS; vc4_hvs_debugfs_init() returns
+	 * -ENODEV in that case, so only warn when an HVS is actually present.
+	 */
+	if (vc4->hvs)
+		drm_WARN_ON(drm, vc4_hvs_debugfs_init(minor));
 
 	if (vc4->v3d) {
 		drm_WARN_ON(drm, vc4_bo_debugfs_init(minor));

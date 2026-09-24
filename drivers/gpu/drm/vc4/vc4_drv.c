@@ -361,10 +361,6 @@ static int vc4_drm_bind(struct device *dev)
 		}
 	}
 
-	ret = aperture_remove_all_conflicting_devices(driver->name);
-	if (ret)
-		goto err;
-
 	if (firmware) {
 		ret = rpi_firmware_property(firmware,
 					    RPI_FIRMWARE_NOTIFY_DISPLAY_DONE,
@@ -394,11 +390,39 @@ static int vc4_drm_bind(struct device *dev)
 	drm_for_each_crtc(crtc, drm)
 		vc4_crtc_disable_at_boot(crtc);
 
+	/*
+	 * A render-only instance (e.g. "brcm,cygnus-vc4"/Kona V3D) binds no
+	 * HVS or CRTC components, so mode_config.num_crtc stays 0 and there is
+	 * no display pipeline. In that case:
+	 *
+	 *  - Don't advertise KMS. The whole atomic path assumes an HVS
+	 *    (vc4_atomic_commit_tail() unconditionally dereferences vc4->hvs,
+	 *    which is NULL here), so any modeset/atomic ioctl on the primary
+	 *    node would oops the kernel. Clear DRIVER_MODESET|DRIVER_ATOMIC so
+	 *    the DRM core rejects those ioctls before they reach us; the render
+	 *    node (DRIVER_RENDER) is unaffected. Safe to clear here: the minors
+	 *    are already allocated, and drm_dev_register()/drm_mode_config
+	 *    teardown honour the masked flags.
+	 *  - Don't evict the firmware framebuffer or set up fbdev emulation.
+	 *    Removing the aperture would blank the console (simpledrm) with
+	 *    nothing to replace it, and the fbdev initial modeset would take
+	 *    the same NULL-hvs commit path. Leave the existing console alone.
+	 */
+	if (drm->mode_config.num_crtc == 0)
+		drm->driver_features &= ~(DRIVER_MODESET | DRIVER_ATOMIC);
+
+	if (drm->mode_config.num_crtc > 0) {
+		ret = aperture_remove_all_conflicting_devices(driver->name);
+		if (ret)
+			goto err;
+	}
+
 	ret = drm_dev_register(drm, 0);
 	if (ret < 0)
 		goto err;
 
-	drm_client_setup_with_fourcc(drm, DRM_FORMAT_RGB565);
+	if (drm->mode_config.num_crtc > 0)
+		drm_client_setup_with_fourcc(drm, DRM_FORMAT_RGB565);
 
 	return 0;
 

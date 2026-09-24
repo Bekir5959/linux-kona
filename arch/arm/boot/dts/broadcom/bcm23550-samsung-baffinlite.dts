@@ -498,3 +498,22 @@
 		interrupt-names = "host-wake";
 	};
 };
+
+/*
+ * VideoCore-IV GPU (render-only).  Brings up /dev/dri/renderD128 via the vc4
+ * DRM driver in its Cygnus-style, no-KMS configuration.  This does NOT touch
+ * the panel/scanout path (still simpledrm); GPU-composited scanout needs a
+ * separate Kona display/DSI driver.
+ *
+ * CAVEAT: this only works if the MM power domain is powered.  There is no
+ * mainline MM power-domain provider yet, so this depends on the bootloader
+ * leaving the MM island on.  If V3D register reads abort or the vc4 probe
+ * reports a bad V3D_IDENT0, the MM domain is the first suspect.
+ */
+&v3d {
+	status = "okay";
+};
+
+&gpu {
+	status = "okay";
+};

@@ -2,9 +2,15 @@
 config DRM_VC4
 	tristate "Broadcom VC4 Graphics"
 	depends on ARCH_BCM || ARCH_BCM2835 || COMPILE_TEST
-	# Make sure not 'y' when RASPBERRYPI_FIRMWARE is 'm'. This can only
-	# happen when COMPILE_TEST=y, hence the added !RASPBERRYPI_FIRMWARE.
-	depends on RASPBERRYPI_FIRMWARE || (COMPILE_TEST && !RASPBERRYPI_FIRMWARE)
+	# The RaspberryPi firmware interface is only used to hand off the
+	# firmware's boot-time display setup. Broadcom Kona mobile SoCs
+	# (ARCH_BCM_MOBILE) pair the same V3D core with no RPi firmware, and
+	# use vc4 render-only (no KMS) - vc4_drm_bind() skips the firmware
+	# handoff when the "raspberrypi,bcm2835-firmware" node is absent, and
+	# raspberrypi-firmware.h provides stubs when the driver is disabled.
+	# Keep the !RASPBERRYPI_FIRMWARE guard so DRM_VC4=y can't be paired
+	# with RASPBERRYPI_FIRMWARE=m (which would fail to link).
+	depends on RASPBERRYPI_FIRMWARE || ((ARCH_BCM_MOBILE || COMPILE_TEST) && !RASPBERRYPI_FIRMWARE)
 	depends on DRM
 	depends on SND && SND_SOC
 	depends on COMMON_CLK
